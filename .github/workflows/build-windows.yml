@@ -1,0 +1,41 @@
+name: build-windows
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install packages
+        run: python -m pip install --quiet pillow numpy scipy winsdk pillow-heif pyinstaller
+      - name: Unit tests on a real Windows machine (informational)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests 2>&1 | Tee-Object -FilePath tests-on-build-machine.txt | Select-Object -Last 15
+      - name: "Build BaggageClaim.exe (console, for check, one-off runs, visible watcher)"
+        run: pyinstaller --onefile --name BaggageClaim --collect-all winsdk --collect-all pillow_heif --hidden-import vision_windows baggage_claim.py
+      - name: "Build BaggageClaimWatcher.exe (no window, the background watcher)"
+        run: pyinstaller --onefile --noconsole --name BaggageClaimWatcher --collect-all winsdk --collect-all pillow_heif --hidden-import vision_windows --hidden-import baggage_claim watcher_entry.py
+      - name: "Self-check on the build machine (informational, no folders here)"
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          dist\BaggageClaim.exe --check 2>&1 | Tee-Object -FilePath dist\selfcheck-on-build-machine.txt
+      - name: Assemble the bundle
+        shell: pwsh
+        run: |
+          Copy-Item windows\*.bat dist\
+          Copy-Item settings.example.json, README.md, ENGINEERING-NOTES.md, SETUP-WINDOWS.md dist\
+          Move-Item tests-on-build-machine.txt dist\ -ErrorAction SilentlyContinue
+          Get-ChildItem dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaggageClaim-windows
+          path: dist/

@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy this file to settings.local.json and edit the paths. settings.local.json is ignored by git because it names a real class.",
+  "inbox":    "%USERPROFILE%/My Drive/Kindergarten - Room 3/Wall Inbox",
+  "sorted":   "%USERPROFILE%/My Drive/Kindergarten - Room 3",
+  "unsorted": "%USERPROFILE%/My Drive/Kindergarten - Room 3/Unsorted - needs a person",
+  "roster":   "%USERPROFILE%/My Drive/Kindergarten - Room 3/Class list - one first name per line.txt",
+  "project":  "Self-Portrait",
+  "grade":    "Kindergarten",
+  "interval": 5
+}
