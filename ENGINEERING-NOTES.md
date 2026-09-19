@@ -297,3 +297,53 @@ now 6 on Windows and 7 on a Mac, and the never-wrong check is unchanged.
 The bundle from this build, with a pre-filled settings file, went into the
 class Drive folder as "Baggage Claim for Windows.zip" (about 150 MB, most of
 it the numeric libraries inside the two programs).
+**Fourth and fifth builds.** The test threshold change and the history
+rewrite (below) each triggered a build. The fifth is fully green: 55 of 55
+tests on Windows, the reader reads back the test word, READY. The programs
+from that build replaced the ones in the class Drive zip, so what a teacher
+downloads is the artifact of a run with nothing failing.
+
+## September 18, night: a name got out, and the guard that came after
+
+**What happened.** Every commit here is preceded by a scan of the staged
+files for the children's, teachers' and school's names. On the commit that
+recorded the one-click bundle, the scan printed "1" and the commit and push
+went ahead anyway, because the result was read after the push instead of
+before it. One sentence in these notes named the co-teacher whose PC will
+run the watcher. The repository was public by then. The sentence was live
+for about six minutes.
+
+**What was done.** The sentence was reworded. The whole history was squashed
+into a single commit and force-pushed, so the version with the name is on no
+branch. Every file on the public server was fetched anonymously and scanned
+again: zero hits. GitHub can keep an orphaned commit reachable by its exact
+address for a while; only a request to GitHub support removes it for
+certain, and that is Sahaj's to file if they want it.
+
+**What changed so it cannot repeat.** A pre-commit hook now runs the same
+scan and refuses the commit when it finds anything, reading the names from
+a git-ignored file. The scan is no longer a line of output someone has to
+notice; it is a gate. That is the same design rule the tool itself follows
+(nothing is filed on a guess; a doubtful piece stops and waits), applied to
+the repository that holds the tool.
+
+## Where things stand at the end of September 18
+
+| | |
+|---|---|
+| Repository | public, one clean commit, 20 files, no names, photos, class list or real paths |
+| Real wall (Mac) | 24 found, 24 right, 0 unsorted, 0 wrong |
+| Real wall (simulated Windows detection) | 24 found, 24 right, 0 unsorted, 0 wrong |
+| Windows reader | proven on GitHub's Windows machine; not yet run on a classroom PC |
+| Tests | 55 on Mac, 55 on Windows, all passing |
+| Watching now | Sahaj's Mac, from Terminal, on the shared settings file |
+| Next | the co-teacher runs Setup.bat; the moment it says READY, the Mac watcher stops |
+
+**Why the day went the way it did.** Each change today came from a person
+with a constraint, not from a plan: two teachers with no Mac (the Windows
+port), a colleague who should not spend fifteen minutes installing Python
+(the one-click bundle), a teacher who should never need to edit a settings
+file for a new display (the project folder inside the inbox), and a
+repository that is now public (the scan became a gate). The tool is the same
+tool it was on Tuesday. What changed is how many people can use it without
+asking anyone for help.
