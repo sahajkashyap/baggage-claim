@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy this file to settings.local.json and edit the paths. settings.local.json is ignored by git because it names a real class.",
+  "inbox":    "%USERPROFILE%/My Drive/Grade 1 - Room 4/Arrivals",
+  "sorted":   "%USERPROFILE%/My Drive/Grade 1 - Room 4",
+  "unsorted": "%USERPROFILE%/My Drive/Grade 1 - Room 4/Unsorted - needs a person",
+  "roster":   "%USERPROFILE%/My Drive/Grade 1 - Room 4/Class list - one first name per line.txt",
+  "project":  "Self-Portrait",
+  "grade":    "Grade 1",
+  "interval": 5,
+  "priority": 50,
+  "_priority": "Only matters when more than one computer watches the same class. The lowest number that is switched on does the sorting; the others stand by. Give the classroom computer 50 and a helper's computer 90.",
+  "shared": false,
+  "_shared": "Say true when another computer watches this class too and may still have a version of Baggage Claim from before September 26, 2026. Until that computer has reported in (it has a file in 'Watcher status' in the class folder), this one leaves each new photo for it for 10 minutes and sorts the photo only if it is still in Arrivals after that, so no child gets a piece twice."
+}

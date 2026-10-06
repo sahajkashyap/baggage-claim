@@ -1,0 +1,26 @@
+# Real children's work and names never go in the repo.
+inbox/
+sorted/
+unsorted/
+run-report.md
+roster.txt
+settings.local.json
+settings.local.sh
+vision
+.coverage
+__pycache__/
+*.up.png
+logs/
+.watch-heartbeat
+.in-progress/
+.tmp/
+Baggage Claim Watcher.app/
+Baggage Claim.app/
+*.lock
+.watch-lock
+.private-names
+tools/
+classes/
+.stage/
+.privacy-allow
+backups/
