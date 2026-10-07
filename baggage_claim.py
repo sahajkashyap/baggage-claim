@@ -1164,12 +1164,20 @@ def refresh_roster(path, roster, seen, log=print):
 
 
 def roster_forms(name):
-    """Strings a roster entry may appear as on the paper."""
+    """Strings a roster entry may appear as on the paper. A class list written
+    last name first ("Doe, Jane", the way a class's own files were named on
+    October 6, 2026) is also matched the way the paper says it: "Jane" and
+    "Jane Doe"."""
     n = norm(name)
     forms = {n}
     parts = n.split()
     if parts:
         forms.add(parts[0])
+    if "," in name:
+        last, given = (norm(x) for x in name.split(",", 1))
+        if last and given:
+            forms.add(given.split()[0])
+            forms.add(f"{given} {last}")
     return forms
 
 
@@ -2413,7 +2421,12 @@ def cut_and_file(path, roster, out_dir, project, tmpdir, grid=None, log=print, g
 # A teacher can drop a PDF packet into Wall Inbox (at the top, or in a project
 # folder) exactly like a photo: 300 pages of the children's work, scanned or
 # made on a computer. The rule the teacher is given: the child's name TYPED in
-# a corner of EVERY page, and, if they like, "page 2 of 3" beside it.
+# a corner of the FIRST page of that child's work (a name sticker), and, if
+# they like, "page 2 of 3" beside it. The pages that follow need no sticker:
+# a page with no name sticker belongs to the child named on the page before
+# it, because that is the order the pages were scanned in (October 7, 2026;
+# until then the name had to be on every page). A name on every page still
+# works, and is the only way when one child's pages are not next to each other.
 #
 #   1. Each page is read. A page made on a computer has its words inside the
 #      PDF (the text layer): those lines and where they sit are taken as they
@@ -2423,14 +2436,31 @@ def cut_and_file(path, roster, out_dir, project, tmpdir, grid=None, log=print, g
 #      lines are in the frame of the page as a person sees it, so the rule
 #      about names at the top and bottom edge (match_name) works unchanged.
 #   2. A "page X of Y" (or "X of Y", or "X/Y") beside the name is taken off
-#      the line and kept as that page's number.
+#      the line and kept as that page's number. One exception: "X/Y" that is
+#      the class's own grade ("1/2" in a class whose grade is 1-2, "3/4",
+#      "5/6") is the grade printed on the sheet, never a page number
+#      (grade_written_with_a_slash).
 #   3. All of one child's pages read for certain go into ONE PDF in that
 #      child's project folder, in the order they are in the packet, named like
 #      a photo's piece ('<project> <grade>.pdf', then ' 2' ...). The pages are
 #      copied from the packet, not redrawn, so nothing loses quality.
-#   4. A page whose name is not certain goes to 'Unsorted - needs a person' as
-#      a one-page PDF called 'GUESS <best guess> - ... page 012.pdf'. A page is
-#      never given to a child because of where it sits in the packet.
+#   4. A page with NO name sticker goes with the page before it: three pages
+#      scanned one after the other, the name on the first only, are all that
+#      child's. That holds until the next page that has a name. It is the one
+#      case where a page is given to a child because of where it sits, and it
+#      stops the moment the tool is not sure whose pages it is in:
+#        - a page that HAS what looks like a name sticker (a short line at the
+#          top or bottom edge, close to a child's name) that could not be read
+#          for certain goes to a person, and so does every page with no
+#          sticker after it, up to the next name read for certain. It may be
+#          the next child's first page, so nothing after it is assumed;
+#        - pages before the first name in the packet go to a person: there is
+#          no page before them to go with.
+#      A page sent to a person is a one-page PDF in 'Unsorted - needs a
+#      person' called 'GUESS <best guess> - ... page 012.pdf'.
+#      A page that went with the page before it takes the next page number
+#      when that page carries one ("page 1 of 3", then two pages with no
+#      sticker, is a whole set of three), so rule 5 still proves the set.
 #   5. A child whose numbered pages are not a whole set (a page missing, or
 #      one there twice) is not filed at all: every page of that child goes to
 #      a person, called 'CHECK PAGES <child> - ...', because the name was read
@@ -2518,10 +2548,31 @@ PAGE_NUMBER_FORMS = (
 PAGE_NUMBER_MOST = 12        # "X/Y" with Y above this is a date or a fraction, not a page number
 
 
-def take_page_number(text):
+def grade_written_with_a_slash(grade):
+    """{(1, 2)} for a class whose grade is "1-2" (or "1/2", "1st and 2nd"):
+    the grade the way a worksheet prints it beside the child's name, "1/2".
+    Empty for a grade that is not two numbers ("Kindergarten", "3", "").
+    On October 7, 2026 the first real packet of a 1-2 class had "1/2" printed
+    at the top of every sheet; it was read as "page 1 of 2", so a child with
+    one page was held back for a second page that never existed. The same
+    goes for a 3-4 class ("3/4") and a 5-6 class ("5/6")."""
+    nums = re.findall(r"\d+", grade or "")
+    return {(int(nums[0]), int(nums[1]))} if len(nums) == 2 else set()
+
+
+def take_page_number(text, not_pages=()):
     """('Maya Torres', (2, 3, 'page')) for 'Maya Torres  page 2 of 3': the
     line without its page number, and the number. (text, None) when the line
-    has none."""
+    has none. `not_pages` holds the class's grade (grade_written_with_a_slash):
+    "1/2" in a 1-2 class is the grade, so it is taken off the line like a
+    page number but is not one. "page 1 of 2" and "1 of 2" still are."""
+    if not_pages:       # the grade comes off the line first, wherever it is
+        slash = PAGE_NUMBER_FORMS[-1][1]
+        # ...unless it says "page" in front: "page 1/2" is a page number in every class
+        kept = slash.sub(lambda mt: " " if (int(mt.group(1)), int(mt.group(2))) in not_pages and not re.search(
+            r"(?:page|\bpg|\bp)\s*\.?\s*$", text[:mt.start()], re.I) else mt.group(0), text)
+        if kept != text:
+            text = re.sub(r"\s+", " ", kept).strip(" -|,;:.()[]\t")
     for form, rx in PAGE_NUMBER_FORMS:
         for mt in rx.finditer(text):
             x, y = int(mt.group(1)), int(mt.group(2))
@@ -2532,13 +2583,14 @@ def take_page_number(text):
     return text, None
 
 
-def page_lines(lines, height):
+def page_lines(lines, height, not_pages=()):
     """The lines of one page ready for match_name, and the page numbers found
     on them. Each line gets its rel_y (see match_name); a page number is taken
-    off its line and kept with that line's box."""
+    off its line and kept with that line's box. `not_pages`: see
+    take_page_number."""
     out, numbers = [], []
     for t in lines:
-        text, num = take_page_number((t.get("text") or "").strip())
+        text, num = take_page_number((t.get("text") or "").strip(), not_pages)
         rel_y = (t["y"] + t["h"] / 2) / max(1, height)
         if num:
             numbers.append({"number": num, "x": t["x"], "y": t["y"], "w": t["w"], "h": t["h"], "rel_y": rel_y})
@@ -2592,16 +2644,33 @@ def text_layer_lines(pdfium, page, width, height):
         tp.close()
 
 
-def read_packet_page(pdfium, page, roster, tmpdir, n):
+def unread_sticker(m, height):
+    """True when a page whose name was not read for certain still shows what
+    looks like a name sticker: a short line (three words at most) at the top
+    or bottom edge that is close to a child's name. Such a page may be the
+    first page of the NEXT child, so it is never given to the child before it
+    and neither are the pages after it. A guess that comes from the middle of
+    the page, or from a sentence, is the child's own writing and not a
+    sticker."""
+    if m["status"] != "unsure":
+        return False
+    if not m.get("box") or not m.get("text"):
+        return True             # a guess with nowhere to look: not safe to call it "no sticker"
+    rel_y = (m["box"][1] + m["box"][3]) / 2 / max(1, height)
+    return len(m["text"].split()) <= 3 and (rel_y <= EDGE_BAND or rel_y >= 1 - EDGE_BAND)
+
+
+def read_packet_page(pdfium, page, roster, tmpdir, n, not_pages=()):
     """Read one page of a packet: {'m': match_name's answer, 'number': (x, y)
-    or None, 'how': 'text layer' or 'reader'}."""
+    or None, 'how': 'text layer' or 'reader', 'sticker': True when the page
+    has a name sticker that could not be read for certain (unread_sticker)}."""
     w, h = page.get_size()
     scale = min(PACKET_DPI / 72.0, PACKET_MAX_SIDE / max(w, h, 1.0))
     width, height = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
     typed, numbers, how = [], [], "text layer"
     m = {"name": None, "score": 0.0, "margin": 0.0, "text": None, "box": None, "status": "no text read"}
     if PACKET_TEXT_LAYER:
-        typed, numbers = page_lines(text_layer_lines(pdfium, page, width, height), height)
+        typed, numbers = page_lines(text_layer_lines(pdfium, page, width, height), height, not_pages)
         if typed:
             m = match_name(typed, roster)
     if m["status"] != "confident":
@@ -2612,21 +2681,21 @@ def read_packet_page(pdfium, page, roster, tmpdir, n):
         p = os.path.join(tmpdir, f"page-{n}.png")
         img.save(p)
         try:
-            seen, more = page_lines(join_rows(read_photo_text(img, p, tmpdir)), img.height)
+            seen, more = page_lines(join_rows(read_photo_text(img, p, tmpdir)), img.height, not_pages)
         finally:
             try:
                 os.remove(p)
             except OSError:
                 pass
-        width = img.width
+        width, height = img.width, img.height
         typed, numbers = typed + seen, numbers + more
         if typed:
             m = match_name(typed, roster)
     number = page_number_by_name(numbers, m, width) if m["status"] == "confident" else None
-    return {"m": m, "number": number, "how": how, "scale": scale}
+    return {"m": m, "number": number, "how": how, "scale": scale, "sticker": unread_sticker(m, height)}
 
 
-def closer_page_number(page, read, tmpdir, n, times=2):
+def closer_page_number(page, read, tmpdir, n, times=2, not_pages=()):
     """Look again, closer, for the page number beside a name read for certain
     by the reader. Small type drawn at 200 dots to the inch can come back
     wrong ("2/2" read as "212"); the corner around the name drawn twice as
@@ -2654,7 +2723,7 @@ def closer_page_number(page, read, tmpdir, n, times=2):
             pass
     back = [{**t, "x": (t["x"] + box[0]) / times, "y": (t["y"] + box[1]) / times, "w": t["w"] / times,
              "h": t["h"] / times} for t in seen]
-    lines, numbers = page_lines(back, img.height / times)
+    lines, numbers = page_lines(back, img.height / times, not_pages)
     near = match_name(lines, [m["name"]]) if lines else None
     if not near or near["status"] != "confident":
         return None             # the name itself did not read again: nothing here to trust
@@ -2718,10 +2787,11 @@ def pdf_of_pages(pypdf, reader, pages, mark):
     return buf.getvalue()
 
 
-def page_number_problems(child, pages):
+def page_number_problems(child, pages, follows=()):
     """What is wrong with one child's page numbers, in plain words: [] when the
     set is whole or the child's pages carry no numbers. `pages` is
-    [(packet page, (x, y) or None)]."""
+    [(packet page, (x, y) or None)]; `follows` holds the packet pages that
+    have no name sticker and took their number from the page before."""
     numbered = [(p, n) for p, n in pages if n]
     if not numbered:
         return []
@@ -2740,7 +2810,8 @@ def page_number_problems(child, pages):
     for p, (x, y) in numbered:
         where.setdefault(x, []).append(p)
         if x > y:
-            probs.append(f"packet page {p} says page {x} of {y}")
+            probs.append(f"packet page {p} has no name sticker and would be page {x} of {y}" if p in follows
+                         else f"packet page {p} says page {x} of {y}")
     for x in sorted(where):
         if len(where[x]) > 1:
             probs.append(f"page {x} of {total} is there {len(where[x])} times "
@@ -2776,12 +2847,25 @@ def packet_note(packet_name, project, results, names, per_child, problems, roste
              f"Project:  {project or ''}",
              f"Pages:    {n} in the packet, {filed} filed into the children's folders, "
              f"{n - filed} sent to a person (in '{unsorted_name}')", ""]
+    carried = {}
+    for r in results:
+        if r["status"] == "confident" and r.get("follows"):
+            carried.setdefault((r["follows"], r["name"]), []).append(r["piece"])
+    if carried:
+        lines += ["Pages with no name sticker, filed with the page before them"]
+        for (lead, child), got in sorted(carried.items()):
+            lines.append(f"- Packet page{'' if len(got) == 1 else 's'} {', '.join(str(p) for p in got)}: filed for "
+                         f"{child}, whose name is on packet page {lead}.")
+        lines += ["A page with no name sticker goes to the child named on the page before it. If one of these "
+                  "is another child's, that child's first page had no sticker: move the pages over by hand.", ""]
     guesses = [r for r in results if r["status"] != "confident" and r.get("reason") != PAGES]
     if guesses:
         lines += ["Pages sent to a person because the name could not be read for certain"]
         for r in guesses:
             i = r["piece"] - 1
-            guess = (f"best guess {r['name']} (read '{r['text']}')" if r["name"] and r["status"] == "unsure"
+            guess = ("no name sticker, and no page before it with a name read for certain to go with"
+                     if r.get("nosticker") else
+                     f"best guess {r['name']} (read '{r['text']}')" if r["name"] and r["status"] == "unsure"
                      else "no name could be read")
             lines.append(f"- Packet page {r['piece']}: {guess}; {where_it_sat(i, names)}.")
         lines += ["Each is a one-page PDF in this folder called 'GUESS', then the guess, then its page number. "
@@ -2825,8 +2909,10 @@ def packet_text(packet_name, results, unsorted_name, note_name):
     filed = sum(1 for r in results if r["status"] == "confident")
     kids = len({r["name"] for r in results if r["status"] == "confident"})
     again = sum(1 for r in results if r.get("already"))
-    more = (f"; {again} of them were already in the children's folders from an earlier sort and were not "
-            f"filed a second time" if again else "")
+    went = sum(1 for r in results if r["status"] == "confident" and r.get("follows"))
+    more = (f"; {went} of the filed pages have no name sticker and went with the page before" if went else "")
+    more += (f"; {again} of them were already in the children's folders from an earlier sort and were not "
+             f"filed a second time" if again else "")
     return (f"{packet_name}: {n} page{'' if n == 1 else 's'}, {filed} filed for {kids} "
             f"child{'' if kids == 1 else 'ren'}, {n - filed} to '{unsorted_name}'{more}. "
             f"See the note '{note_name}' there")
@@ -2866,14 +2952,17 @@ def sort_packet(path, roster, out_dir, project, tmpdir, log=print, grade="", sor
         if not len(doc) or count != len(doc):
             raise PacketError(PACKET_BAD, PACKET_EMPTY_WHY if not len(doc) else PACKET_BAD_WHY)
         log(f"{packet_name}: a PDF packet of {count} page{'' if count == 1 else 's'}")
+        not_pages = grade_written_with_a_slash(grade)       # "1/2" in a 1-2 class is the grade, not a page number
         reads = []
         for i in range(count):
             page = doc[i]
             try:
-                r = read_packet_page(pdfium, page, roster, tmpdir, i + 1)
+                r = read_packet_page(pdfium, page, roster, tmpdir, i + 1, not_pages)
             except pdfium.PdfiumError as e:     # one page that cannot be drawn: a person looks at it
+                # nobody knows whether it has a name sticker, so the pages after it are not assumed
                 r = {"m": {"name": None, "score": 0.0, "margin": 0.0, "text": None, "box": None,
-                           "status": "no text read"}, "number": None, "how": f"could not be read ({e})"}
+                           "status": "no text read"}, "number": None, "how": f"could not be read ({e})",
+                     "sticker": True}
             finally:
                 page.close()
             reads.append(r)
@@ -2882,14 +2971,39 @@ def sort_packet(path, roster, out_dir, project, tmpdir, log=print, grade="", sor
             log(f"  page {i + 1}: {m['status']:12s} {m['name'] or '-':12s} read '{m['text'] or ''}' "
                 f"score {m['score']} from the {r['how']}{num}")
 
+        # names: whose page each one is. A name read for certain, or, for a
+        # page with no name sticker, the child named on the page before it
+        # (rule 4 above). follows: {such a page: the page that carries the name}
         names = [r["m"]["name"] if r["m"]["status"] == "confident" else None for r in reads]
+        follows, owner, lead = {}, None, None
+        for i, r in enumerate(reads):
+            if names[i]:
+                owner, lead = names[i], i + 1
+            elif r.get("sticker"):
+                owner = None        # a sticker that was not read: the pages after it are nobody's until a name is
+            elif owner:
+                names[i] = owner
+                follows[i + 1] = lead
+                log(f"  page {i + 1}: no name sticker; it goes with page {lead} ({owner})")
         per_child = {}
         for i, child in enumerate(names):
             if child:
                 per_child.setdefault(child, []).append(i + 1)
+
+        def numbered(got):
+            """[(packet page, its page number)] for one child's pages. A page
+            with no sticker takes the number after the page before it."""
+            out = []
+            for p in got:
+                n = reads[p - 1]["number"]
+                if p in follows and out and out[-1][1]:
+                    n = (out[-1][1][0] + 1, out[-1][1][1])
+                out.append((p, n))
+            return out
+
         problems = {}
         for child, got in per_child.items():
-            probs = page_number_problems(child, [(p, reads[p - 1]["number"]) for p in got])
+            probs = page_number_problems(child, numbered(got), follows)
             if probs:
                 # before a child's pages go to a person, the page numbers the
                 # reader read are looked at again, closer (closer_page_number)
@@ -2899,7 +3013,7 @@ def sort_packet(path, roster, out_dir, project, tmpdir, log=print, grade="", sor
                         continue
                     page = doc[p - 1]
                     try:
-                        again = closer_page_number(page, reads[p - 1], tmpdir, p)
+                        again = closer_page_number(page, reads[p - 1], tmpdir, p, not_pages=not_pages)
                     except pdfium.PdfiumError:
                         again = None
                     finally:
@@ -2909,9 +3023,12 @@ def sort_packet(path, roster, out_dir, project, tmpdir, log=print, grade="", sor
                         reads[p - 1]["number"] = again
                         looked = True
                 if looked:
-                    probs = page_number_problems(child, [(p, reads[p - 1]["number"]) for p in got])
+                    probs = page_number_problems(child, numbered(got), follows)
             if probs:
                 problems[child] = probs
+        for got in per_child.values():
+            for p, n in numbered(got):
+                reads[p - 1]["number"] = n
     finally:
         doc.close()
 
@@ -2934,9 +3051,12 @@ def sort_packet(path, roster, out_dir, project, tmpdir, log=print, grade="", sor
             dest = os.path.join(dest_dir, piece_name(project, grade, dest_dir, ".pdf"))
             write_whole(pdf_of_pages(pypdf, reader, new, packet_mark(key, new)), dest)
         for p in got:
+            m = reads[p - 1]["m"]
+            if p in follows:        # no name was read on it: it went with the page before
+                m = {**m, "name": child, "status": "confident", "text": None, "box": None, "follows": follows[p]}
             results[p - 1] = {"piece": p, "page": p, "packet": packet_name, "file": shown(have.get(p) or dest, True),
                               "bbox": None, "turned": 0, "already": p in have, "number": reads[p - 1]["number"],
-                              **reads[p - 1]["m"]}
+                              **m}
 
     udir = unsorted_root(out_dir, unsorted_dir)
     make_inside(held_by(unsorted_dir, sorted_dir), udir)    # made when needed, the class folder around it never
@@ -2945,8 +3065,12 @@ def sort_packet(path, roster, out_dir, project, tmpdir, log=print, grade="", sor
             continue
         m = dict(reads[i]["m"])
         if names[i]:            # read for certain; that child's set of pages is not whole
-            m.update(status="unsure", reason=PAGES, why="; ".join(problems[names[i]]))
+            m.update(name=names[i], status="unsure", reason=PAGES, why="; ".join(problems[names[i]]))
             lead, guess = CHECK_PAGES, safe_folder(names[i])
+        elif not reads[i].get("sticker"):
+            # no name sticker, and no page before it whose name was read for certain
+            m.update(name=None, nosticker=True)
+            lead, guess = "GUESS", "no-name"
         else:
             # a name too far from every child's to be a guess is not given as one
             lead, guess = "GUESS", (safe_folder(m["name"]) if m["name"] and m["status"] == "unsure" else "no-name")
@@ -3065,7 +3189,9 @@ def write_report(out_dir, photo, results):
         for r in results:
             was_there = " (already there from an earlier try, not filed again)" if r.get("already") else ""
             result = ("name read, check the picture" if r.get("reason") == EDGES else
-                      "name read, check the page numbers" if r.get("reason") == PAGES else r["status"])
+                      "name read, check the page numbers" if r.get("reason") == PAGES else
+                      f"no name sticker, filed with page {r['follows']}"
+                      if r.get("follows") and r["status"] == "confident" else r["status"])
             piece = f"page {r['piece']}" if r.get("packet") else r["piece"]
             f.write(f"| {piece} | {result} | {r['name'] or ''} | {r['text'] or ''} | "
                     f"{r['score']} | {r['file']}{was_there} |\n")

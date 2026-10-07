@@ -110,13 +110,23 @@ A PDF goes into `Arrivals` (at the top, or in a project folder) exactly
 like a photo: for example 300 pages of the class's work, scanned or made on a
 computer. The tool files every page into the right child's folder.
 
-- **The rule:** the child's name is typed in a corner of every page. Every
-  page, not only the first: a page is never given to a child because of
-  where it sits in the packet.
-- **Optional:** `page 2 of 3` (or `2 of 3`, or `2/3`) right beside the name, on the same line or just under it; a number printed elsewhere on the page is not read as the page number. Then a
+- **The rule:** the child's name is typed in a corner of the first page of
+  that child's work (a name sticker). The pages scanned right after it need
+  no name: a page with no name sticker goes to the child named on the page
+  before it, until the next page with a name. Scan three pages with
+  `Jordan Lum` on the first only, and all three are Jordan's. Keep each
+  child's pages together; if they are mixed, put the name on every page.
+- **Where that stops.** A page that has a sticker the tool cannot read for
+  certain goes to a person, and so does every page with no sticker after
+  it, up to the next name: it may be the next child's first page. Pages
+  before the first name in the packet go to a person too. The note lists
+  every page that was filed because of the page before it.
+- **Optional:** `page 2 of 3` (or `2 of 3`, or `2/3`) right beside the name, on the same line or just under it; a number printed elsewhere on the page is not read as the page number. A class's own grade written with a slash is never a page number: `1/2` on the sheets of a class whose grade is set to `1-2` (likewise `3/4`, `5/6`) is the grade. Write `page 1 of 2` there. Then a
   child whose set is not whole, a page missing or a page there twice, is not
   filed at all: all of that child's pages go to a person, and the note says
-  which page is missing or doubled.
+  which page is missing or doubled. A page with no sticker takes the next
+  number after the page before it, so `page 1 of 3` and two pages with no
+  sticker are a whole set of three.
 - **One PDF per child per packet**, holding that child's pages in the order
   they are in the packet, named like a photo's piece:
   `sorted/Jordan Lum/Reading Log/Reading Log Kindergarten.pdf`. The pages

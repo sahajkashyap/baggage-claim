@@ -1,7 +1,12 @@
 """The contract check for PDF packets.
 
 The rule a teacher is given for a packet: the child's name TYPED in a corner of
-EVERY page; "page X of Y" beside it is optional. When a teacher follows it,
+the FIRST page of that child's work; the pages scanned after it need no name,
+because a page with no name sticker goes with the page before it (October 7,
+2026). A name on every page follows the rule too, and is needed when one
+child's pages are not next to each other. "page X of Y" beside the name is
+optional; "1/2" in a class whose grade is 1-2 is the grade, not a page number.
+When a teacher follows it,
 every page must land in the right child's folder: one PDF per child, holding
 exactly that child's pages in the order they are in the packet, and nothing in
 Unsorted. Every packet below follows the rule, so the required score is 100%.
@@ -39,7 +44,7 @@ def cases():
 
     def add(name, kind, names, per_child, **kw):
         out.append({"case": f"{kind} {name}", "kind": kind, "names": names, "per_child": per_child,
-                    "landscape": kw.pop("landscape", False), "kw": kw})
+                    "landscape": kw.pop("landscape", False), "grade": kw.pop("grade", None), "kw": kw})
     for kind in ("digital", "scanned"):
         for k, corner in enumerate(("tl", "tr", "bl", "br")):
             add(f"corner-{corner}", kind, NAMES[k * 2:k * 2 + 8], [1, 2, 3], corner=corner,
@@ -56,6 +61,20 @@ def cases():
         add("mixed order, no numbers", kind, NAMES[12:22], [3, 2, 1], corner="tl", numbers=False, mixed=True,
             seed=28)
         add("every corner", kind, NAMES[:12], [1, 2, 3], corners=["tl", "tr", "bl", "br"], numbers=True, seed=29)
+        # the name on the first page of each child's work only (October 7, 2026)
+        add("name on the first page only, 25 children, 3 pages", kind, NAMES, 3, corner="tr", numbers=False,
+            first_only=True, seed=30)
+        add("name on the first page only, 1-4 pages", kind, NAMES[2:16], [3, 1, 4, 2], corner="br", numbers=False,
+            first_only=True, seed=31)
+        add("name on the first page only, 'page 1 of Y'", kind, NAMES[8:20], [2, 3, 1], corner="tl", numbers=True,
+            first_only=True, seed=32)
+        add("name on the first page only, landscape, every corner", kind, NAMES[:10], [3, 2],
+            corners=["tl", "tr", "bl", "br"], numbers=False, first_only=True, landscape=True, seed=33)
+        # the class's grade printed beside every name, "1/2": the grade, not "page 1 of 2" (October 7, 2026)
+        add("grade 1/2 beside the name, 1 page each", kind, NAMES, 1, corner="tr", numbers=False, seed=34,
+            grade=(1, 2))
+        add("grade 3/4 beside the name, name on the first page only", kind, NAMES[4:16], [2, 1, 3], corner="tl",
+            numbers=False, first_only=True, seed=35, grade=(3, 4))
     return out
 
 
@@ -65,6 +84,12 @@ def say(*a):
 
 def run_case(c, work):
     pages = packet_pages(c["names"], c["per_child"], **c["kw"])
+    grade = "K"
+    if c.get("grade"):          # the grade beside every name that is on a page, written with a slash
+        grade = "%d-%d" % c["grade"]
+        for pg in pages:
+            if pg["name"]:
+                pg["number"], pg["form"] = c["grade"], "slash"
     path = os.path.join(work, "inbox", f"Packet {c['case']}.pdf".replace("/", "-").replace("'", ""))
     os.makedirs(os.path.dirname(path))
     try:
@@ -78,14 +103,14 @@ def run_case(c, work):
     out = os.path.join(work, "out")
     os.makedirs(out)
     log = []
-    res = sw.process_packet(path, NAMES, out, PROJECT, log=log.append, grade="K")
+    res = sw.process_packet(path, NAMES, out, PROJECT, log=log.append, grade=grade)
     problems = []
     right = 0
     want = {}
     for i, pg in enumerate(pages):
-        want.setdefault(pg["name"], []).append(i)
+        want.setdefault(pg.get("child") or pg["name"], []).append(i)
     for r in res:
-        truth = pages[r["piece"] - 1]["name"]
+        truth = pages[r["piece"] - 1].get("child") or pages[r["piece"] - 1]["name"]
         if r["status"] != "confident":
             problems.append(f"packet page {r['piece']} ({truth}) went to a person: {r['status']}, read "
                             f"{r.get('text')!r}{', ' + r['why'] if r.get('why') else ''}")

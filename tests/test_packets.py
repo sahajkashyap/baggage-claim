@@ -1,9 +1,11 @@
 """PDF packets: a PDF dropped into Wall Inbox, every page filed to its child.
 
-The rule a teacher is given: the child's name TYPED in a corner of EVERY page,
-"page X of Y" beside it if they like. One PDF per child per packet, pages in
-packet order; a page whose name is not certain goes to a person; a child whose
-numbered pages are not a whole set is not filed; a note says what happened.
+The rule a teacher is given: the child's name TYPED in a corner of the FIRST
+page of that child's work, "page X of Y" beside it if they like; a page with no
+name sticker goes with the page before it (October 7, 2026). One PDF per child
+per packet, pages in packet order; a page whose name is not certain goes to a
+person, and so do the pages with no sticker after it; a child whose numbered
+pages are not a whole set is not filed; a note says what happened.
 The whole grid is tests/packet_check.py; these are the core cases and each
 rule on its own. Invented names only (contract_wall NAMES).
 Run:  python3 -m unittest tests.test_packets
@@ -56,8 +58,8 @@ class Work(unittest.TestCase):
         make_packet(path, pages, kind, **kw)
         return path
 
-    def sort(self, path, project="Reading", roster=NAMES):
-        return sw.process_packet(path, roster, self.tmp, project, log=self.log.append, grade="K")
+    def sort(self, path, project="Reading", roster=NAMES, grade="K"):
+        return sw.process_packet(path, roster, self.tmp, project, log=self.log.append, grade=grade)
 
     def child_pdfs(self, child, project="Reading"):
         d = os.path.join(self.tmp, "sorted", sw.safe_folder(child), project)
@@ -75,7 +77,7 @@ class Work(unittest.TestCase):
     def assert_filed_in_order(self, path, pages, children):
         prints = fingerprints(path)
         for child in children:
-            want = [prints[i] for i, pg in enumerate(pages) if pg["name"] == child]
+            want = [prints[i] for i, pg in enumerate(pages) if (pg.get("child") or pg["name"]) == child]
             got = self.child_pdfs(child)
             self.assertEqual(len(got), 1, f"{child}: one PDF")
             self.assertEqual(fingerprints(got[0]), want, f"{child}: exactly its pages, in packet order")
@@ -207,21 +209,20 @@ class CorePackets(Work):
 
 @unittest.skipUnless(PDF and READER, "needs pypdfium2, pypdf, reportlab and the on-device reader")
 class PagesForAPerson(Work):
-    def test_unreadable_page_goes_to_a_person_and_the_note_says_where_it_sat(self):
+    def test_a_sticker_that_cannot_be_read_goes_to_a_person_and_the_note_says_where_it_sat(self):
+        # two children called Maya and only "Maya" on the sticker, between the second child's two pages
         names = NAMES[:3]
         pages = packet_pages(names, 2, numbers=False, seed=7)
-        pages.insert(3, {"name": None, "corner": "br", "number": None, "form": "page"})   # between Jonah's two
+        pages.insert(3, {"name": "Maya", "corner": "br", "number": None, "form": "page"})
         path = self.packet(pages)
-        res = self.sort(path)
+        res = self.sort(path, roster=["Maya Torres", "Maya R."] + names[1:])
         self.assertNotEqual(res[3]["status"], "confident")
         guesses = [f for f in self.unsorted() if f.endswith(".pdf")]
-        # the body text can give a weak guess ("bridge"); a guess is all it is
         self.assertEqual(len(guesses), 1)
-        self.assertRegex(guesses[0], r"^GUESS .+ - Reading K - Packet [0-9a-f]{6} page 004\.pdf$")
+        self.assertRegex(guesses[0], r"^GUESS Maya.* - Reading K - Packet [0-9a-f]{6} page 004\.pdf$")
         note = self.note()
         self.assertRegex(note, rf"Packet page 4: [^\n]*; between two of {names[1]}'s pages\.")
-        self.assertIn("7 in the packet, 6 filed", note)
-        # the page is never given to Jonah because of where it sits
+        # a page with a sticker on it is never given to the second child because of where it sits
         self.assertEqual(len(fingerprints(self.child_pdfs(names[1])[0])), 2)
 
     def test_missing_page_two_of_three_is_not_filed_and_the_note_says_which(self):
@@ -270,6 +271,173 @@ class PagesForAPerson(Work):
         self.assertEqual(self.child_pdfs("Maya Torres") + self.child_pdfs("Maya R."), [])
         self.assertTrue(any(f.startswith("GUESS Maya") and f.endswith("page 001.pdf") for f in self.unsorted()))
         self.assertIn("Packet page 1: best guess Maya", self.note())
+
+
+class TheGradeIsNotAPageNumber(unittest.TestCase):
+    """October 7, 2026: a 1-2 class's sheets say "1/2" beside the name. It is
+    the grade. The same goes for 3/4 and 5/6."""
+
+    def test_which_grades_are_written_with_a_slash(self):
+        for grade, want in (("1-2", {(1, 2)}), ("3-4", {(3, 4)}), ("5/6", {(5, 6)}), ("1st and 2nd", {(1, 2)}),
+                            ("Kindergarten", set()), ("3", set()), ("", set()), (None, set())):
+            self.assertEqual(sw.grade_written_with_a_slash(grade), want, grade)
+
+    def test_the_grade_is_taken_off_the_line_and_is_not_a_number(self):
+        self.assertEqual(sw.take_page_number("Maya Torres 1/2", {(1, 2)}), ("Maya Torres", None))
+        self.assertEqual(sw.take_page_number("3/4 Wren", {(3, 4)}), ("Wren", None))
+
+    def test_in_another_class_it_is_still_a_page_number(self):
+        self.assertEqual(sw.take_page_number("Maya Torres 1/2"), ("Maya Torres", (1, 2, "slash")))
+        self.assertEqual(sw.take_page_number("Maya Torres 1/2", {(3, 4)}), ("Maya Torres", (1, 2, "slash")))
+
+    def test_a_real_page_number_beside_the_grade_is_kept(self):
+        self.assertEqual(sw.take_page_number("Maya 1/2 page 2 of 3", {(1, 2)}), ("Maya", (2, 3, "page")))
+        self.assertEqual(sw.take_page_number("Maya 1/2 2/3", {(1, 2)}), ("Maya", (2, 3, "slash")))
+        self.assertEqual(sw.take_page_number("Maya 1 of 2", {(1, 2)}), ("Maya", (1, 2, "of")))
+        self.assertEqual(sw.take_page_number("Maya page 1/2", {(1, 2)}), ("Maya", (1, 2, "page")))
+
+
+def graded(names, grade=(1, 2)):
+    """One page per child, each with the grade printed beside the name."""
+    return [{"name": n, "child": n, "corner": "tr", "number": grade, "form": "slash"} for n in names]
+
+
+@unittest.skipUnless(PDF and READER, "needs pypdfium2, pypdf, reportlab and the on-device reader")
+class TheGradePrintedOnEverySheet(Work):
+    def test_one_page_each_with_the_grade_beside_the_name_is_filed(self):
+        for kind, grade, pair in (("digital", "1-2", (1, 2)), ("scanned", "3-4", (3, 4)), ("scanned", "5-6", (5, 6))):
+            with self.subTest(kind=kind, grade=grade):
+                self.setUp()
+                names = NAMES[:4]
+                pages = graded(names, pair)
+                path = self.packet(pages, kind=kind)
+                res = self.sort(path, grade=grade)
+                self.assertTrue(all(r["status"] == "confident" and r["number"] is None for r in res), self.log)
+                self.assert_filed_in_order(path, pages, names)
+                self.assertEqual([f for f in self.unsorted() if f.endswith(".pdf")], [])
+
+    def test_the_same_packet_in_a_class_with_another_grade_is_held_for_its_second_page(self):
+        names = NAMES[:2]
+        path = self.packet(graded(names))
+        self.sort(path, grade="K")
+        self.assertEqual(self.child_pdfs(names[0]), [])
+        self.assertIn("page 2 of 2 is missing", self.note())
+
+
+BARE = {"name": None, "corner": "br", "number": None, "form": "page"}      # a page with no name sticker
+
+
+class WhatIsAStickerThatWasNotRead(unittest.TestCase):
+    def m(self, status, text, y, h=40):
+        return {"name": "Maya Torres", "score": 0.7, "margin": 0.0, "text": text, "status": status,
+                "box": (100, y, 300, y + h)}
+
+    def test_a_short_guess_at_the_top_or_bottom_edge_is_a_sticker(self):
+        self.assertTrue(sw.unread_sticker(self.m("unsure", "Maya", 60), 2200))
+        self.assertTrue(sw.unread_sticker(self.m("unsure", "Maya T", 2050), 2200))
+
+    def test_a_guess_from_the_middle_or_from_a_sentence_is_not(self):
+        self.assertFalse(sw.unread_sticker(self.m("unsure", "Maya", 1100), 2200))
+        self.assertFalse(sw.unread_sticker(self.m("unsure", "my friend Maya came too", 60), 2200))
+
+    def test_no_guess_at_all_is_no_sticker_and_a_name_read_for_certain_is_not_asked(self):
+        for status in ("no text read", "no name read", "confident"):
+            self.assertFalse(sw.unread_sticker(self.m(status, "Maya", 60), 2200))
+
+    def test_a_guess_with_no_place_on_the_page_is_treated_as_a_sticker(self):
+        self.assertTrue(sw.unread_sticker({**self.m("unsure", "Maya", 60), "box": None}, 2200))
+
+    def test_a_page_past_the_last_number_says_it_has_no_sticker(self):
+        probs = sw.page_number_problems("Maya", [(1, (1, 2)), (2, (2, 2)), (3, (3, 2))], follows={2: 1, 3: 1})
+        self.assertEqual(probs, ["packet page 3 has no name sticker and would be page 3 of 2"])
+
+
+@unittest.skipUnless(PDF and READER, "needs pypdfium2, pypdf, reportlab and the on-device reader")
+class PagesWithNoNameSticker(Work):
+    """October 7, 2026: a page with no name sticker goes with the page before
+    it. Three pages scanned one after the other with the name on the first
+    only are all that child's."""
+
+    def test_three_scanned_pages_with_the_name_on_the_first_only_are_all_that_childs(self):
+        names = NAMES[:3]
+        pages = packet_pages(names, 3, corner="tr", numbers=False, first_only=True, seed=12)
+        path = self.packet(pages, kind="scanned")
+        res = self.sort(path)
+        self.assertEqual([r["name"] for r in res], [p["child"] for p in pages])
+        self.assertTrue(all(r["status"] == "confident" for r in res))
+        self.assertEqual([r.get("follows") for r in res], [None, 1, 1, None, 4, 4, None, 7, 7])
+        self.assert_filed_in_order(path, pages, names)
+        self.assertEqual([f for f in self.unsorted() if f.endswith(".pdf")], [])
+        self.assertIn(f"- Packet pages 2, 3: filed for {names[0]}, whose name is on packet page 1.", self.note())
+        self.assertTrue(any("6 of the filed pages have no name sticker" in line for line in self.log), self.log[-1])
+
+    def test_a_page_with_no_sticker_between_two_named_pages_goes_with_the_one_before(self):
+        names = NAMES[:3]
+        pages = packet_pages(names, 2, numbers=False, seed=7)
+        pages.insert(3, dict(BARE, child=names[1]))     # after the first of the second child's two pages
+        path = self.packet(pages)
+        res = self.sort(path)
+        self.assertEqual((res[3]["status"], res[3]["name"], res[3]["follows"]), ("confident", names[1], 3))
+        self.assert_filed_in_order(path, pages, names)
+        self.assertEqual([f for f in self.unsorted() if f.endswith(".pdf")], [])
+        self.assertIn("7 in the packet, 7 filed", self.note())
+
+    def test_pages_before_the_first_name_go_to_a_person(self):
+        names = NAMES[:2]
+        pages = [dict(BARE), dict(BARE)] + packet_pages(names, 1, numbers=False, seed=13)
+        path = self.packet(pages)
+        res = self.sort(path)
+        self.assertTrue(all(r["status"] != "confident" and r["name"] is None for r in res[:2]))
+        self.assertEqual([f[:13] for f in self.unsorted() if f.endswith(".pdf")], ["GUESS no-name"] * 2)
+        self.assertIn("Packet page 1: no name sticker, and no page before it with a name read for certain", self.note())
+        for child in names:
+            self.assertEqual(len(fingerprints(self.child_pdfs(child)[0])), 1)
+
+    def test_a_sticker_read_only_as_a_guess_stops_it_until_the_next_name(self):
+        # the second child's sticker says only "Maya" and there are two Mayas: that page is
+        # nobody's for certain, so the page after it must not go to the first child
+        a, b = NAMES[1], NAMES[2]
+        named = {"corner": "tl", "number": None, "form": "page"}
+        pages = [dict(named, name=a), dict(named, name="Maya"), dict(BARE), dict(named, name=b), dict(BARE)]
+        path = self.packet(pages)
+        res = self.sort(path, roster=["Maya Torres", "Maya R.", a, b])
+        self.assertEqual([r["status"] == "confident" for r in res], [True, False, False, True, True])
+        self.assertEqual(len(fingerprints(self.child_pdfs(a)[0])), 1, "the first child keeps one page")
+        self.assertEqual(len(fingerprints(self.child_pdfs(b)[0])), 2)
+        self.assertEqual(self.child_pdfs("Maya Torres") + self.child_pdfs("Maya R."), [])
+        held = [f for f in self.unsorted() if f.endswith(".pdf")]
+        self.assertEqual(len(held), 2)
+        self.assertTrue(held[0].startswith("GUESS Maya") and "page 002" in held[0], held)
+        self.assertTrue(held[1].startswith("GUESS no-name") and "page 003" in held[1], held)
+
+    def test_page_one_of_three_and_two_pages_with_no_sticker_are_a_whole_set(self):
+        names = NAMES[:2]
+        pages = packet_pages(names, 3, numbers=True, first_only=True, seed=14)
+        path = self.packet(pages)
+        res = self.sort(path)
+        self.assertEqual([r["number"] for r in res[:3]], [(1, 3), (2, 3), (3, 3)])
+        self.assert_filed_in_order(path, pages, names)
+
+    def test_page_one_of_three_and_only_one_page_after_it_is_not_filed(self):
+        names = NAMES[:2]
+        pages = packet_pages(names, 3, numbers=True, first_only=True, seed=15)
+        del pages[2]            # the first child's third page never reached the scanner
+        path = self.packet(pages)
+        self.sort(path)
+        self.assertEqual(self.child_pdfs(names[0]), [], "a set that is not whole is not filed")
+        self.assertEqual(len(self.child_pdfs(names[1])), 1)
+        self.assertEqual(len([f for f in self.unsorted() if f.startswith(sw.CHECK_PAGES)]), 2)
+        self.assertIn(f"{names[0]}: page 3 of 3 is missing", self.note())
+
+    def test_a_packet_sorted_twice_gives_no_second_copies(self):
+        names = NAMES[:2]
+        pages = packet_pages(names, 2, numbers=False, first_only=True, seed=16)
+        path = self.packet(pages)
+        self.sort(path)
+        res = self.sort(path)
+        self.assertTrue(all(r["already"] for r in res))
+        for child in names:
+            self.assertEqual(len(self.child_pdfs(child)), 1)
 
 
 @unittest.skipUnless(PDF, "needs pypdfium2, pypdf and reportlab")

@@ -1,7 +1,10 @@
 """Practice PDF packets that follow the teacher's rule for packets.
 
-The rule: the child's name is TYPED in a corner of EVERY page; "page X of Y"
-beside it is optional. Two kinds of packet are made here, both US Letter:
+The rule: the child's name is TYPED in a corner of the FIRST page of that
+child's work; the pages after it need no name (a page with no name sticker
+goes with the page before it). A name on every page also follows the rule.
+"page X of Y" beside the name is optional. Two kinds of packet are made here,
+both US Letter:
 
 - DIGITAL: made on a computer (reportlab). The name is real text in the PDF.
 - SCANNED: every page is a picture (Pillow), saved as an image-only PDF, the
@@ -35,20 +38,26 @@ BODY = ["This practice sheet carries a few typed lines",
 NUMBER_FORMS = {"page": "page {x} of {y}", "of": "{x} of {y}", "slash": "{x}/{y}"}
 
 
-def packet_pages(names, per_child, corner="br", numbers=True, form="page", mixed=False, seed=1, corners=None):
+def packet_pages(names, per_child, corner="br", numbers=True, form="page", mixed=False, seed=1, corners=None,
+                 first_only=False):
     """The list of pages for a packet: one dict per page with name, corner,
     number (x, y) or None and the number form. `per_child` is a count, or a
     list of counts used in turn. `mixed` shuffles the pages so one child's
     pages are not next to each other; `corners` gives each page a corner at
-    random from that list."""
+    random from that list. `first_only` puts the name (and the page number)
+    on the first page of each child's work only: the pages after it carry no
+    name, and 'child' says whose they are. Never with `mixed`."""
+    assert not (first_only and mixed), "pages with no name must follow their child's first page"
     rnd = random.Random(seed)
     counts = per_child if isinstance(per_child, (list, tuple)) else [per_child]
     pages = []
     for k, name in enumerate(names):
         total = counts[k % len(counts)]
         for x in range(1, total + 1):
-            pages.append({"name": name, "corner": rnd.choice(corners) if corners else corner,
-                          "number": (x, total) if numbers else None, "form": form})
+            named = x == 1 or not first_only
+            pages.append({"name": name if named else None, "child": name,
+                          "corner": rnd.choice(corners) if corners else corner,
+                          "number": (x, total) if numbers and named else None, "form": form})
     if mixed:
         rnd.shuffle(pages)
     return pages

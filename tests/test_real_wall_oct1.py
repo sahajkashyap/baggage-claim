@@ -188,5 +188,22 @@ class AnInboxMayBeRenamed(unittest.TestCase):
         self.assertEqual([os.path.basename(os.path.dirname(m)) for m in made], ["Maya Torres"])
 
 
+class ALastNameFirstClassList(unittest.TestCase):
+    """October 6, 2026: a class whose files are named "Doe, Jane"."""
+    def test_the_paper_may_say_the_first_name_or_first_and_last(self):
+        forms = bc.roster_forms("Doe, Jane")
+        for f in ("jane", "jane doe", "doe jane", "doe"):
+            self.assertIn(f, forms)
+
+    def test_a_label_with_the_first_name_finds_the_child(self):
+        roster = ["Doe, Jane", "Ray, Wren", "Okafor, Bea"]
+        line = {"text": "Jane", "conf": 1.0, "x": 900, "y": 1200, "w": 120, "h": 40, "angle": 0}
+        m = bc.match_name([line], roster)
+        self.assertEqual(m["name"], "Doe, Jane")
+
+    def test_a_list_without_commas_is_read_as_before(self):
+        self.assertEqual(bc.roster_forms("Maya Torres"), {"maya torres", "maya"})
+
+
 if __name__ == "__main__":
     unittest.main()
