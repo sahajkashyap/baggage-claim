@@ -127,6 +127,10 @@ computer. The tool files every page into the right child's folder.
   which page is missing or doubled. A page with no sticker takes the next
   number after the page before it, so `page 1 of 3` and two pages with no
   sticker are a whole set of three.
+- **A child who goes by another name.** When the class list says one first
+  name and the child's work carries another, the class's settings file can
+  say so: `"also_called": {"Alexander Lund": ["Sasha Lund"]}`. The name on
+  the left is the class-list line; the page is filed in that child's folder.
 - **One PDF per child per packet**, holding that child's pages in the order
   they are in the packet, named like a photo's piece:
   `sorted/Jordan Lum/Reading Log/Reading Log Kindergarten.pdf`. The pages

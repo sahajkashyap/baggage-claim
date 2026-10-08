@@ -440,6 +440,40 @@ class PagesWithNoNameSticker(Work):
             self.assertEqual(len(self.child_pdfs(child)), 1)
 
 
+@unittest.skipUnless(PDF and READER, "needs pypdfium2, pypdf, reportlab and the on-device reader")
+class TheSamePacketAfterTheClassListWasPutRight(Work):
+    """October 8, 2026: a packet is dropped in again once the tool can read a
+    name it could not before. The page files, and its old copy leaves Unsorted."""
+
+    def test_a_page_filed_the_second_time_leaves_no_copy_waiting_for_a_person(self):
+        names = NAMES[:3]
+        pages = packet_pages(names, 1, numbers=False, seed=17)
+        path = self.packet(pages)
+        short = [n for n in NAMES if n != names[1]]          # the class list is missing one child
+        res = self.sort(path, roster=short)
+        self.assertNotEqual(res[1]["status"], "confident")
+        waiting = [f for f in self.unsorted() if f.endswith(".pdf")]
+        self.assertEqual(len(waiting), 1)
+        other = os.path.join(self.tmp, "unsorted", "GUESS somebody - another packet page 002.pdf")
+        shutil.copyfile(self.child_pdfs(names[0])[0], other)    # not this page of this packet: must stay
+        res = self.sort(path)                                   # the class list put right
+        self.assertTrue(all(r["status"] == "confident" for r in res))
+        self.assertEqual([f for f in self.unsorted() if f.endswith(".pdf")], [os.path.basename(other)])
+        self.assertEqual([r["already"] for r in res], [True, False, True])
+        for child in names:
+            self.assertEqual(len(self.child_pdfs(child)), 1)
+        self.assertTrue(any("taken out of" in line for line in self.log))
+
+    def test_a_page_still_not_read_keeps_its_copy(self):
+        names = NAMES[:2]
+        pages = packet_pages(names, 1, numbers=False, seed=18)
+        path = self.packet(pages)
+        short = [n for n in NAMES if n != names[1]]
+        self.sort(path, roster=short)
+        self.sort(path, roster=short)
+        self.assertEqual(len([f for f in self.unsorted() if f.endswith(".pdf")]), 1)
+
+
 @unittest.skipUnless(PDF, "needs pypdfium2, pypdf and reportlab")
 class FiledOnce(Work):
     def test_a_packet_sorted_twice_gives_no_second_copies(self):

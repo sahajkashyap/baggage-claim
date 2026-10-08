@@ -1163,22 +1163,60 @@ def refresh_roster(path, roster, seen, log=print):
     return names
 
 
+# A child's work can carry a name that is not the one on the class list: the
+# list has "Alexander" and the sticker says "Sasha", the name he goes by
+# (October 8, 2026: a page with a clearly typed sticker went to a person for
+# this reason alone). The class's settings file may say so:
+#     "also_called": {"Alexander Lund": ["Sasha Lund"]}
+# The name on the left is the class-list line, exactly; the page is still
+# filed in that child's folder. Nothing is guessed: a name is only ever
+# matched to the names written here.
+ALSO_CALLED = {}
+
+
+def set_also_called(table):
+    """Take the "also_called" part of a settings file. Anything that is not a
+    name with one or more other names is left out."""
+    ALSO_CALLED.clear()
+    if not isinstance(table, dict):
+        return
+    for name, others in table.items():
+        others = [others] if isinstance(others, str) else others
+        if isinstance(name, str) and isinstance(others, (list, tuple)):
+            kept = [o for o in others if isinstance(o, str) and norm(o)]
+            if kept:
+                ALSO_CALLED[name] = kept
+
+
 def roster_forms(name):
     """Strings a roster entry may appear as on the paper. A class list written
     last name first ("Doe, Jane", the way a class's own files were named on
     October 6, 2026) is also matched the way the paper says it: "Jane" and
-    "Jane Doe"."""
-    n = norm(name)
-    forms = {n}
-    parts = n.split()
-    if parts:
-        forms.add(parts[0])
-    if "," in name:
-        last, given = (norm(x) for x in name.split(",", 1))
-        if last and given:
-            forms.add(given.split()[0])
-            forms.add(f"{given} {last}")
+    "Jane Doe". The other names a child goes by (ALSO_CALLED) count too."""
+    forms = set()
+    for one in [name] + ALSO_CALLED.get(name, []):
+        n = norm(one)
+        forms.add(n)
+        parts = n.split()
+        if parts:
+            forms.add(parts[0])
+        if "," in one:
+            last, given = (norm(x) for x in one.split(",", 1))
+            if last and given:
+                forms.add(given.split()[0])
+                forms.add(f"{given} {last}")
     return forms
+
+
+def spelled_in_full(texts, name):
+    """True when one line on the paper carries every word of this child's
+    full name, spelled exactly, in either order: "Jordan Lum" or "Lum, Jordan
+    2026/2027". A class-list entry of one word has no full name to find."""
+    for one in [name] + ALSO_CALLED.get(name, []):
+        want = set(norm(one.replace(",", " ")).split())
+        if len(want) >= 2 and any(want <= set(norm(t["text"].replace(",", " ")).split()) for t in texts):
+            return True
+    return False
 
 
 def match_name(texts, roster):
@@ -1268,6 +1306,21 @@ def match_name(texts, roster):
         status = "unsure"
     else:
         status = "no name read"
+    if status == "unsure":
+        # Two children whose names are nearly the same ("Lena" and "Lea") are
+        # too close to call from a first name alone. When the paper also
+        # carries the full name of exactly one of them, spelled out ("Lund,
+        # Lena  2026/2027" on the sticker), that settles it: the page is
+        # hers. October 7, 2026: a sticker read letter for letter went to a
+        # person because another child's first name was one letter away.
+        close = [n for n, (s, _, _) in ranked if s >= CONFIDENT_SCORE and top_score - s < CONFIDENT_MARGIN]
+        full = [n for n in close if n in as_label and spelled_in_full(texts, n)]
+        if len(close) > 1 and len(full) == 1:
+            top_name = full[0]
+            top_score, top_t, piece = best[top_name]
+            box = None if top_t.get("nobox") else (top_t["x"], top_t["y"], top_t["x"] + top_t["w"],
+                                                   top_t["y"] + top_t["h"])
+            status = "confident"
     return {"name": top_name, "score": round(top_score, 3), "margin": round(margin, 3),
             "text": top_t["text"], "box": box, "status": status}
 
@@ -3082,6 +3135,35 @@ def sort_packet(path, roster, out_dir, project, tmpdir, log=print, grade="", sor
         results[i] = {"piece": i + 1, "page": i + 1, "packet": packet_name, "file": shown(dest, False),
                       "bbox": None, "turned": 0, "already": False, "number": reads[i]["number"], **m}
 
+    # The same packet sorted again (dropped in again after a class list was
+    # put right, or after a newer version of this tool): a page that went to a
+    # person last time and is filed now would leave its old one-page copy
+    # behind in Unsorted, still asking for a person. The tool takes away its
+    # own copy, and only that: a PDF in Unsorted that says, in its own
+    # properties, that it is this page of this packet.
+    cleared = 0
+    try:
+        waiting = os.listdir(udir)
+    except OSError:
+        waiting = []
+    for i in range(count):
+        if results[i]["status"] != "confident":
+            continue
+        tail = f" page {i + 1:03d}.pdf"
+        for n in waiting:
+            if n.endswith(tail) and (n.startswith("GUESS ") or n.startswith(CHECK_PAGES + " ")):
+                old = os.path.join(udir, n)
+                if read_packet_mark(pypdf, old) == (key, {i + 1}):
+                    try:
+                        os.remove(old)
+                        cleared += 1
+                    except OSError:
+                        pass
+    if cleared:
+        log(f"{packet_name}: {cleared} page{'' if cleared == 1 else 's'} that waited for a person after an earlier "
+            f"sort {'is' if cleared == 1 else 'are'} filed now; the old cop{'y was' if cleared == 1 else 'ies were'} "
+            f"taken out of '{os.path.basename(os.path.normpath(udir))}'")
+
     unsorted_name = os.path.basename(os.path.normpath(udir))
     note = os.path.join(udir, safe_folder(f"{PACKET_NOTE} - {project} - {stem} {key[:6]}") + ".txt")
     try:
@@ -4706,6 +4788,7 @@ def main(argv=None):
             if key in st and key not in given:
                 setattr(a, attr, st[key])
         a.shared = is_yes(a.shared)
+        set_also_called(st.get("also_called"))
         try:
             a.priority = int(a.priority)
         except (TypeError, ValueError):

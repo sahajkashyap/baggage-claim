@@ -188,6 +188,87 @@ class AnInboxMayBeRenamed(unittest.TestCase):
         self.assertEqual([os.path.basename(os.path.dirname(m)) for m in made], ["Maya Torres"])
 
 
+class TwoFirstNamesOneLetterApart(unittest.TestCase):
+    """October 7, 2026: "Lena" and "Lea" are in one class. A sticker that
+    says "Lund, Lena  2026/2027" with "Lena" large beneath is Lena's."""
+    ROSTER = ["Lena Lund", "Lea Okafor", "Theo Park"]
+
+    def line(self, text, y):
+        return {"text": text, "conf": 1.0, "x": 1400, "y": y, "w": 250, "h": 30, "angle": 0, "rel_y": y / 2200}
+
+    def test_the_first_name_alone_is_still_too_close_to_call(self):
+        m = bc.match_name([self.line("Lena", 2100)], self.ROSTER)
+        self.assertEqual(m["status"], "unsure")
+        m = bc.match_name([self.line("Lea", 2100)], self.ROSTER)
+        self.assertEqual(m["status"], "unsure")
+
+    def test_the_full_name_on_the_sticker_settles_it(self):
+        for corner, big, want in (("Lund, Lena  2026/2027", "Lena", "Lena Lund"),
+                                  ("Okafor, Lea  2026/2027", "Lea", "Lea Okafor"),
+                                  ("Lena Lund", "Lena", "Lena Lund")):
+            m = bc.match_name([self.line(corner, 2020), self.line(big, 2100)], self.ROSTER)
+            self.assertEqual((m["name"], m["status"]), (want, "confident"), corner)
+
+    def test_the_other_childs_last_name_settles_nothing(self):
+        # "Lena" large, but the corner line gives the other child's last name with it: a person decides
+        m = bc.match_name([self.line("Okafor, Lena  2026/2027", 2020), self.line("Lena", 2100)], self.ROSTER)
+        self.assertEqual(m["status"], "unsure")
+
+    def test_both_full_names_on_one_paper_settle_nothing(self):
+        m = bc.match_name([self.line("Lund, Lena", 2020), self.line("Okafor, Lea", 2060), self.line("Lena", 2100)],
+                          self.ROSTER)
+        self.assertEqual(m["status"], "unsure")
+
+    def test_two_children_with_the_same_first_name_are_told_apart_by_the_full_name(self):
+        roster = ["Maya Torres", "Maya Reyes", "Theo Park"]
+        m = bc.match_name([self.line("Reyes, Maya  2026/2027", 2020), self.line("Maya", 2100)], roster)
+        self.assertEqual((m["name"], m["status"]), ("Maya Reyes", "confident"))
+        m = bc.match_name([self.line("Maya", 2100)], roster)
+        self.assertEqual(m["status"], "unsure")
+
+    def test_a_class_list_of_first_names_has_no_full_name_to_find(self):
+        self.assertFalse(bc.spelled_in_full([self.line("Lena", 2100)], "Lena"))
+        m = bc.match_name([self.line("Lena", 2100)], ["Lena", "Lea"])
+        self.assertEqual(m["status"], "unsure")
+
+
+class AChildWhoGoesByAnotherName(unittest.TestCase):
+    """The class list says "Alexander Lund"; his sticker says "Lund, Sasha
+    2026/2027" with "Sasha" large. Another child in the class has the same
+    last name."""
+    ROSTER = ["Alexander Lund", "Theo Lund", "Wren Park"]
+
+    def setUp(self):
+        self.addCleanup(bc.set_also_called, None)
+
+    def sticker(self, first, last="Lund"):
+        def line(text, y):
+            return {"text": text, "conf": 1.0, "x": 1400, "y": y, "w": 250, "h": 30, "angle": 0, "rel_y": y / 2200}
+        return [line(f"{last}, {first}  2026/2027", 2020), line(first, 2100)]
+
+    def test_without_being_told_the_page_goes_to_a_person(self):
+        m = bc.match_name(self.sticker("Sasha"), self.ROSTER)
+        self.assertNotEqual(m["status"], "confident")
+
+    def test_told_his_other_name_the_page_is_his(self):
+        bc.set_also_called({"Alexander Lund": ["Sasha Lund"]})
+        m = bc.match_name(self.sticker("Sasha"), self.ROSTER)
+        self.assertEqual((m["name"], m["status"]), ("Alexander Lund", "confident"))
+        self.assertTrue(bc.spelled_in_full(self.sticker("Sasha"), "Alexander Lund"))
+
+    def test_his_class_list_name_and_the_others_are_read_as_before(self):
+        bc.set_also_called({"Alexander Lund": "Sasha Lund"})
+        for first, want in (("Alexander", "Alexander Lund"), ("Theo", "Theo Lund"), ("Wren", None)):
+            m = bc.match_name(self.sticker(first, "Lund" if want else "Park"), self.ROSTER)
+            self.assertEqual((m["name"], m["status"]), (want or "Wren Park", "confident"))
+
+    def test_a_settings_file_with_something_else_there_changes_nothing(self):
+        for junk in (None, "Sasha", ["Sasha"], {"Alexander Lund": 3}, {"Alexander Lund": []}, {3: ["Sasha"]}):
+            bc.set_also_called(junk)
+            self.assertEqual(bc.ALSO_CALLED, {})
+            self.assertEqual(bc.roster_forms("Alexander Lund"), {"alexander lund", "alexander"})
+
+
 class ALastNameFirstClassList(unittest.TestCase):
     """October 6, 2026: a class whose files are named "Doe, Jane"."""
     def test_the_paper_may_say_the_first_name_or_first_and_last(self):

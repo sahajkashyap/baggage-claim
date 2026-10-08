@@ -2913,3 +2913,27 @@ settings but not `~`, so it could not find one class's inbox after it had
 already stopped that class's job. The job was down for under two minutes
 and no photo was waiting; the pass was finished by hand and every class
 checked READY.
+
+## Privacy gate, Oct 7 2026: pages with no name sticker, and the grade that is not a page number (1aca96c, public push)
+
+Two separate agents, the repository frozen while each ran. The first
+scanner run ended in GATE FAIL, and nothing was pushed: the script's eight
+places were all PASS with 0 hits and no protected name was found anywhere,
+but the masking tool, which is broader than the scanner on purpose, marked
+words on nine added lines, none of them a protected name: code words and
+practice text. Four lines were reworded, the commit was amended before any
+push, and both agents were run again from the start.
+
+The second scanner: the script's eight places all PASS with 0 hits, no
+orphaned commit served, no private file tracked, the seven public
+repositories matching what the script scanned, GATE PASS. The web archive
+could not be asked (it was limiting requests); that check is for
+information only. The verifier, with its own commands: every entry of the
+protected list against the files at this commit, the full history, both
+documents as public now and as pushed, every added line and the commit
+message; five entries picked at random searched again; the one earlier
+coincidence, an ordinary word in a setup script, agreed. No protected name.
+VERIFIED PASS.
+
+The verifier's note for a person, not a protected name: some new comments
+say when a problem was first seen on a real packet.
